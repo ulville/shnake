@@ -1,0 +1,751 @@
+#!/usr/bin/env bash
+
+    # This file is part of shnake.
+
+    # shnake is free software: you can redistribute it and/or modify
+    # it under the terms of the GNU General Public License as published by
+    # the Free Software Foundation, either version 3 of the License, or
+    # (at your option) any later version.
+
+    # shnake is distributed in the hope that it will be useful,
+    # but WITHOUT ANY WARRANTY; without even the implied warranty of
+    # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    # GNU General Public License for more details.
+
+    # You should have received a copy of the GNU General Public License
+    # along with screc.  If not, see <https://www.gnu.org/licenses/>.
+
+# Copyright Ulvican Kahya aka ulville 2026
+#
+# shnake is a clone of the once-popular mobile game snake.
+# It's written in Bash 5+
+
+
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+SCRIPT_DIR="$(cd -- "${SCRIPT_PATH%/*}" &>/dev/null && pwd)"
+
+SAVE_FILE="$SCRIPT_DIR/save"
+SCORE_BOARD_FILE="$SCRIPT_DIR/score-board"
+
+step_time=100 # ms
+cell_width=2
+cell_height=1
+width=27
+height=15
+window_left=0
+window_top=0
+
+# Define sprites and colors
+declare -A ascii_sprites=(
+    [snake]="[]" [food]="<>"
+)
+
+declare -A unicode_sprites=(
+    [snake]=$'\u2588\u2588' [food]=$'\u2592\u2592'
+)
+
+declare -n sprites=ascii_sprites
+
+IFS=$'\n' read -r -d '' BANNER << EOF
+       MM                                     MMM 
+     MMMMM   MMMM   MMMM   MMMM   MMMM   MM  MMMM 
+   MMMMMMM  MMMMM   MMMM  MMMMM   MMMM  MMMM MMM  
+  MMMMM     MMMMMM  MMM  MMM MMM   MMMMMMMM MM    
+ MMM        MMM MM  MMM MMM   MMMMM MMMMM  MMMMMM 
+MMMMMMMMMMMM MM MMMMMMM MM MMMMMM  MMMMMM   MMM   
+        MMMM MM   MMMM MMMMMM MMMM MMM MMMM MMMMMM
+     MMMMMM MMM       MMMM         MMM  MM   MMM  
+ MMMMMMMM               MM                        
+  MMM                                             
+EOF
+
+IFS=$'\n' read -r -d '' digit_0 << EOF
+MMMMMM
+MM  MM
+MM  MM
+MM  MM
+MMMMMM
+EOF
+
+IFS=$'\n' read -r -d '' digit_1 << EOF
+    MM
+  MMMM
+    MM
+    MM
+    MM
+EOF
+
+IFS=$'\n' read -r -d '' digit_2 << EOF
+MMMMMM
+    MM
+MMMMMM
+MM    
+MMMMMM
+EOF
+
+IFS=$'\n' read -r -d '' digit_3 << EOF
+MMMMMM
+    MM
+MMMMMM
+    MM
+MMMMMM
+EOF
+
+IFS=$'\n' read -r -d '' digit_4 << EOF
+MM  MM
+MM  MM
+MMMMMM
+    MM
+    MM
+EOF
+
+IFS=$'\n' read -r -d '' digit_5 << EOF
+MMMMMM
+MM    
+MMMMMM
+    MM
+MMMMMM
+EOF
+
+IFS=$'\n' read -r -d '' digit_6 << EOF
+MMMMMM
+MM    
+MMMMMM
+MM  MM
+MMMMMM
+EOF
+
+IFS=$'\n' read -r -d '' digit_7 << EOF
+MMMMMM
+    MM
+  MM  
+  MM  
+  MM  
+EOF
+
+IFS=$'\n' read -r -d '' digit_8 << EOF
+MMMMMM
+MM  MM
+MMMMMM
+MM  MM
+MMMMMM
+EOF
+
+IFS=$'\n' read -r -d '' digit_9 << EOF
+MMMMMM
+MM  MM
+MMMMMM
+    MM
+MMMMMM
+EOF
+
+DIGIT=(
+    "$digit_0" "$digit_1" "$digit_2" "$digit_3" "$digit_4"
+    "$digit_5" "$digit_6" "$digit_7" "$digit_8" "$digit_9"
+)
+BLOCK=$'\u2588'
+for n in {0..9}; do
+    digit="${DIGIT[$n]}"
+    DIGIT[n]="${digit//M/$BLOCK}"
+done
+BANNER="${BANNER//M/$BLOCK}"
+unset digit n
+
+# KEYS:
+KEY_UP=$'\e[A'
+KEY_DOWN=$'\e[B'
+KEY_RIGHT=$'\e[C'
+KEY_LEFT=$'\e[D'
+
+# COLORS:
+BLK=$'\e[30m'; LBLK=$'\e[90m'
+RED=$'\e[31m'; LRED=$'\e[91m'
+GRN=$'\e[32m'; LGRN=$'\e[92m'
+YEL=$'\e[33m'; LYEL=$'\e[93m'
+BLU=$'\e[34m'; LBLU=$'\e[94m'
+MAG=$'\e[35m'; LMAG=$'\e[95m'
+CYN=$'\e[36m'; LCYN=$'\e[96m'
+WHT=$'\e[37m'; LWHT=$'\e[97m'
+RST=$'\e[0m' ; BOLD=$'\e[1m'
+
+# BACKGROUND COLORS:
+BBLK=$'\e[40m'
+BRED=$'\e[41m'
+BGRN=$'\e[42m'
+BYEL=$'\e[43m'
+BBLU=$'\e[44m'
+BMAG=$'\e[45m'
+BCYN=$'\e[46m'
+BWHT=$'\e[47m'
+
+timeout_event_triggered () {
+    local interval_ms=$1
+    local current_time_us=${EPOCHREALTIME/[^0-9]/}
+    local delta_t_us delta_t_ms
+    (( delta_t_us = current_time_us - last_update_time_us ))
+    (( delta_t_ms = (delta_t_us + 500) / 1000 ))
+    if (( delta_t_ms >= interval_ms )); then
+        last_update_time_us=$current_time_us
+        return 0
+    fi
+    return 1
+}
+
+start_timer () {
+    local timer_name=$1
+    declare -g "$timer_name"=${EPOCHREALTIME/[^0-9]/}
+}
+
+measure_timer () {
+    local -n start_time_us=$1
+    local current_time_us=${EPOCHREALTIME/[^0-9]/}
+    local delta_t_us delta_t_ms
+    (( delta_t_us = current_time_us - start_time_us ))
+    (( delta_t_ms = (delta_t_us + 500) / 1000 ))
+    # start_time_us=$current_time_us
+    move_cursor 1 1
+    printf "\e[2Ktimer: %d ms" $delta_t_ms
+}
+
+# printfc [-f forecolor] [-b backcolor] format [arguments]
+printfc () {
+    local forecolor backcolor
+    local OPTIND OPTARG opt
+    while getopts "f:b:" opt; do
+        case $opt in
+            f) forecolor=$OPTARG
+                ;;
+            b) backcolor=$OPTARG
+                ;;
+            \?) return 1 ;;
+        esac
+    done
+    shift $(( OPTIND - 1 ))
+    format="$1"
+    shift 1
+    printf "%s%s$format%s" "$forecolor" "$backcolor" "$@" "$RST"
+}
+
+repeat () {
+    local times="$1"
+    local string="$2"
+    local spaces
+    printf -v spaces "%*s" "$times" ""
+    printf "%s" "${spaces// /$string}"
+}
+
+cleanup () {
+    if $disable_checkwinsize; then
+        shopt -u checkwinsize
+    fi
+    stty echo
+    hide_cursor off
+    alternate_screen_buffer off
+    # TODO Save game-state and ask to continue on the next run
+}
+
+alternate_screen_buffer () {
+    case "$1" in
+        on) printf "\e[?1049h"
+            ;;
+        off) printf "\e[?1049l"
+            ;;
+        *)
+            ;;
+    esac
+}
+
+hide_cursor () {
+    case "$1" in
+        on) printf "\e[?25l"
+            ;;
+        off) printf "\e[?25h"
+            ;;
+        *)
+            ;;
+    esac
+}
+
+move_cursor () {
+    local y=$1
+    local x=$2
+    printf "\e[%d;%dH" "$y" "$x"
+}
+
+clear_screen_with_backcolor () {
+    printfc -b "$1" "\e[2J"
+}
+
+# clear_point_with_background x y bg
+clear_point_with_backcolor () {
+    local x=$1
+    local y=$2
+    local bg=$3
+    local i
+    for (( i = 0; i < cell_height; i++)); do
+        draw_sprite "$(repeat $cell_width " ")" "$x" "$y" "$BLK" "$bg"
+    done
+}
+
+clear_disposed_cells () {
+    local cell cell_x cell_y
+    for cell in "${disposed_cells[@]}"; do
+        read -r cell_x cell_y <<< "$cell"
+        local x=$(( window_left + 1 + cell_x * cell_width  ))
+        local y=$(( window_top  + 1 + cell_y * cell_height ))
+        clear_point_with_backcolor $x $y "$BGRN"
+    done
+    disposed_cells=()
+}
+
+check_winsize () {
+    (:)
+    if [[ "$old_lines" -ne "$LINES" || "$old_columns" -ne "$COLUMNS" ]]; then
+        center_draw_window
+    fi
+
+    old_lines="$LINES"
+    old_columns="$COLUMNS"
+}
+
+center_draw_window () {
+    local w=$((cell_width * width))
+    local h=$((cell_height * height))
+    local screen_top
+    local screen_left
+    local screen_w
+    local screen_h
+
+    # Center virtual game screen
+    (( screen_w = w + 2 ))
+    (( screen_h = h + 5 ))
+
+    while [[ $COLUMNS -lt $screen_w || $LINES -lt $screen_h ]]; do
+        (:)
+        debug_log "Terminal size (${COLUMNS}x${LINES}) is smaller than min: ${screen_w}x${screen_h}" 1
+        debug_log "Resize your terminal window or decrese font size then Hit Enter to continue" 2
+        read -r -s
+        (:)
+    done
+
+    (( screen_top  = ( ( LINES   - screen_h ) / 2 ) + 1 ))
+    (( screen_left = ( ( COLUMNS - screen_w ) / 2 ) + 1 ))
+    (( window_top  = screen_top + 3 ))
+    (( window_left = screen_left ))
+
+    clear_screen_with_backcolor "$BBLK"
+    # Draw score section
+    move_cursor $screen_top $screen_left
+    printfc -f "$BLK" -b "$BGRN" " %s " "$(repeat "$w" $'\u2500')" # $'\u2534')"
+    move_cursor $((screen_top + 1)) $screen_left
+    printfc -f "$BLK" -b "$BGRN" " %04d%s" 0 "$(repeat "$((screen_w - 4 - 1))" ' ')"
+    move_cursor $((screen_top + 2)) $window_left
+    printfc -f "$BLK" -b "$BGRN" " %s " "$(repeat "$w" $'\u2500')"
+
+    # Draw window borders
+    move_cursor $window_top $window_left
+    printfc -f "$BLK" -b "$BGRN" "\u250c%s\u2510" "$(repeat "$w" $'\u2500')"
+    local i
+    for (( i = 0; i < h; i++)); do
+        move_cursor $((window_top + i + 1)) $window_left
+        printfc -f "$BLK" -b "$BGRN" "\u2502%s\u2502" "$(repeat "$w" ' ')"
+    done
+    move_cursor $((window_top + i + 1)) $window_left
+    printfc -f "$BLK" -b "$BGRN" "\u2514%s\u2518" "$(repeat "$w" $'\u2500')"
+    if "$show_banner"; then
+        show_banner
+        read -r -s -t 5
+        center_draw_window
+    fi
+}
+
+init_window () {
+    trap 'cleanup; exit' EXIT INT TERM
+    alternate_screen_buffer on
+    hide_cursor on
+    stty -echo
+
+    if shopt checkwinsize >/dev/null; then
+        disable_checkwinsize=false
+    else
+        disable_checkwinsize=true
+    fi
+    shopt -s checkwinsize; ( : )
+
+    old_lines="$LINES"
+    old_columns="$COLUMNS"
+    show_banner=true
+    center_draw_window
+}
+
+get_high_score () {
+    local date time _score
+    high_score=0
+    if ! [[ -r "$SCORE_BOARD_FILE" ]]; then
+        return 1
+    fi
+    while read -r date time _score; do
+        (( high_score = high_score > _score ? high_score : _score ))
+    done < "$SCORE_BOARD_FILE"
+}
+
+save_high_score () {
+    printf "%(%Y-%m-%d %H:%M:%S)T %d\n" "-1" "$score" >> "$SCORE_BOARD_FILE"
+    high_score=$score
+}
+
+save_state () {
+    local saved_score="$score"
+    local saved_snake=("${snake[@]}")
+    local saved_food_x="$food_x"
+    local saved_food_y="$food_y"
+    { 
+        declare -p saved_score;
+        declare -p saved_snake;
+        declare -p saved_food_x;
+        declare -p saved_food_y;
+    } > "$SAVE_FILE"
+}
+
+init_game () {
+    get_high_score
+    declare -a -g disposed_cells
+    declare -a -g key_queue
+    grow=false
+
+    if [[ -r "$SAVE_FILE" && -s "$SAVE_FILE" ]]; then
+        . "$SAVE_FILE"
+        score="$saved_score"
+        food_x="$saved_food_x"
+        food_y="$saved_food_y"
+        snake=("${saved_snake[@]}")
+        running=false
+    else
+        score=0
+        snake_reset
+        generate_random_food
+        running=true
+    fi
+
+    allow_move=false
+
+
+    last_update_time_us=${EPOCHREALTIME/[^0-9]/}
+}
+
+# draw_sprite s x y fg bg
+draw_sprite () {
+    local s="$1"
+    local x="$2"
+    local y="$3"
+    local fg="$4"
+    local bg="$5"
+
+    move_cursor "$y" "$x"
+    printfc -f "$fg" -b "$bg" "$s"
+}
+
+draw_digit () {
+    local s="$1"
+    local x="$2"
+    local y="$3"
+    local fg="$4"
+    local bg="$5"
+
+    local line
+    local -a digit_lines
+
+    readarray digit_lines <<< "$s"
+    for line in "${digit_lines[@]}"; do
+        draw_sprite "$line" "$x" "$y" "$fg" "$bg"
+        ((y++))
+    done
+}
+
+# item_in_array item array
+item_in_array () {
+    local needle="$1"
+    local -n haystack="$2"
+    for item in "${haystack[@]}"; do
+        if [[ "$item" == "$needle" ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+generate_random_food () {
+    food_x=$((RANDOM % width))
+    food_y=$((RANDOM % height))
+
+    while item_in_array "$food_x $food_y" snake; do
+        food_x=$((RANDOM % width))
+        food_y=$((RANDOM % height))
+    done
+}
+
+draw_food () {
+    local x=$(( window_left + 1 + food_x * cell_width  ))
+    local y=$(( window_top  + 1 + food_y * cell_height ))
+    draw_sprite "${sprites[food]}" $x $y "$BLK" "$BGRN"
+}
+
+draw_snake () {
+    # TODO Draw the whole body only at the start. Then draw only the head
+    local section section_x section_y
+    for section in "${snake[@]}"; do
+        read -r section_x section_y <<< "$section"
+        local x=$(( window_left + 1 + section_x * cell_width  ))
+        local y=$(( window_top  + 1 + section_y * cell_height ))
+        draw_sprite "${sprites[snake]}" $x $y "$BLK" "$BGRN"
+    done
+}
+
+draw_score () {
+    move_cursor $((window_top - 2)) $((window_left + 1))
+    printfc -f "$BLK" -b "$BGRN" "%04d" "$score"
+}
+
+ring_bell () {
+    printf '\a'
+}
+
+show_score () {
+    local dig_w=3
+    local dig_h=5
+    local dig_c=4
+    local gap=1
+    local digs_w=$(( dig_w * dig_c + gap * ( dig_c - 1 ) ))
+    local dig_left=$(( (width - digs_w) / 2 ))
+    printf -v score_digits "%04d" "$score"
+    local dig_x dig_y i d
+    for i in {0..3}; do
+        d="${score_digits:$i:1}"
+        ((dig_x = window_left + 1 + (dig_left + (dig_w+gap) * i) * cell_width))
+        ((dig_y = window_top + 2 * cell_height))
+        draw_digit "${DIGIT[$d]}" $dig_x $dig_y "$BLK" "$BGRN"
+    done
+
+    local text="HIGH SCORE : $high_score"
+    local txt_w=${#text}
+    local txt_left=$(( window_left + 1 + ( cell_width * width - txt_w ) / 2 ))
+    local txt_top=$(( dig_y + ( dig_h + 1 ) * cell_height ))
+
+    draw_sprite "$text" "$txt_left" "$txt_top" "$BLK" "$BGRN"
+}
+
+show_banner () {
+    local ban_w=50
+    local ban_h=10
+    local left=$(( window_left + 1 + ( cell_width * width - ban_w ) / 2 ))
+    local top=$(( window_top + ( cell_height * height - ban_h ) / 2 ))
+    draw_digit "$BANNER" $left $top "$BLK" "$BGRN"
+    show_banner=false
+}
+
+game_over () {
+    snake_reset
+    # disposed_cells+=("$food_x $food_y")
+    printf "" > "$SAVE_FILE"
+    generate_random_food
+    running=false
+    key_queue=()
+    if [[ $score -gt $high_score ]]; then
+        save_high_score
+    fi
+
+    show_score
+    ring_bell
+    score=0
+    read -r -s # <> <(:)
+    center_draw_window
+}
+
+check_collision_with_food () {
+    if [[ "${snake[0]}" == "$food_x $food_y" ]]; then
+        disposed_cells+=("$food_x $food_y")
+        generate_random_food
+        grow=true
+        ((score = score + 3))
+        # ring_bell
+    fi
+}
+check_collision_with_edges () {
+    local head="${snake[0]}"
+    local head_x head_y
+    read -r head_x head_y <<< "$head"
+    if [[ "$head_x" == "$width" || "$head_x" == "-1" ]]; then
+        game_over
+    fi
+    if [[ "$head_y" == "$height" || "$head_y" == "-1" ]]; then
+        game_over
+    fi
+}
+check_collision_with_tail  () {
+    local -a tail
+    local head="${snake[0]}"
+    tail=("${snake[@]}")
+    unset "tail[0]"
+    tail=("${tail[@]}")
+    if item_in_array "$head" tail; then
+        game_over
+    fi
+}
+
+snake_reset () {
+    # disposed_cells+=("${snake[@]}")
+    local y=$((height-1))
+    local x
+    snake=()
+    for (( x = 11; x >=0; x-- )); do
+        snake+=("$x $y")
+    done
+    direction_x=1
+    direction_y=0
+}
+
+update_snake () {
+    if "$running"; then
+        read -r head_x head_y <<< "${snake[0]}"
+        local new_head_x=$((head_x + direction_x))
+        local new_head_y=$((head_y + direction_y))
+        snake=( "$new_head_x $new_head_y" "${snake[@]}" )
+        if "$grow"; then
+            grow=false
+        else
+            disposed_cells+=("${snake[-1]}")
+            unset 'snake[-1]'
+        fi
+
+        check_collision_with_food
+        check_collision_with_edges
+        check_collision_with_tail
+    fi
+}
+
+debug_log () {
+    local message="$1"
+    local row="$2"
+    local cl=$'\e[2K'
+    draw_sprite "$cl$message" 1 "$row" "$LWHT" "$BRED"
+}
+
+main () {
+    init_window
+    init_game
+
+    # MAIN GAME LOOP
+    while true; do
+        if timeout_event_triggered $step_time; then
+        # Updating Positions
+            update_snake
+            allow_move=true
+        # Drawing
+            check_winsize
+            clear_disposed_cells
+            draw_snake
+            draw_food
+            draw_score
+        fi
+        # Event Handling
+        read -n 1 -r -s -t "0.033" key
+
+        if [[ "$key" == $'\e' ]]; then
+            while read -n 1 -r -s -t 0; do
+                read -n 1 -r -s read_char
+                key+="$read_char"
+            done
+        fi
+
+        if ! "$allow_move" && [[ -n "$key" && "${#key_queue[@]}" -lt 2 ]]; then
+            key_queue+=("$key")
+
+        fi
+
+        if "$allow_move" && [[ -z "$key" ]]; then
+            key="${key_queue[0]}"
+            unset "key_queue[0]"
+            key_queue=("${key_queue[@]}")
+        fi
+
+        if [[ -z "$key" ]]; then
+            continue
+        fi
+
+        running=true
+
+        if [[ "$key" == "p" ]]; then
+            running=false
+            key_queue=()
+        fi
+        if [[ "$key" == "q" ]]; then
+            if [[ "$score" -gt 0 ]]; then
+                save_state
+            fi
+            break
+        fi
+        if "$allow_move" && [[ "$direction_y" -eq 0  && \
+            ( "$key" == "k" || "$key" == "w" || "$key" == "$KEY_UP" ) ]]; then
+        direction_x=0
+        direction_y=-1
+        allow_move=false
+        fi
+        if "$allow_move" && [[ "$direction_y" -eq 0 && \
+            ( "$key" == "j" || "$key" == "s" || "$key" == "$KEY_DOWN" ) ]]; then
+        direction_x=0
+        direction_y=1
+        allow_move=false
+        fi
+        if "$allow_move" && [[ "$direction_x" -eq 0 && \
+            ( "$key" == "l" || "$key" == "d" || "$key" == "$KEY_RIGHT" ) ]]; then
+        direction_x=1
+        direction_y=0
+        allow_move=false
+        fi
+        if "$allow_move" && [[ "$direction_x" -eq 0  && \
+            ( "$key" == "h" || "$key" == "a" || "$key" == "$KEY_LEFT" ) ]]; then
+        direction_x=-1
+        direction_y=0
+        allow_move=false
+        fi
+    done
+    cleanup
+}
+
+main "$@"
+
+# +----------------------------------------------------------+
+# |   0030                                              01   |
+# |  ------------------------------------------------------  |
+# | +------------------------------------------------------+ |
+# | |                                                      | |
+# | |                                                      | |
+# | |                                                      | |
+# | |                                                      | |
+# | |                              ><                      | |
+# | |                                                      | |
+# | |                                                      | |
+# | |             ()                                       | |
+# | |             []                                       | |
+# | |       [][][][]                                       | |
+# | |       []                                             | |
+# | |                                                      | |
+# | |                                                      | |
+# | |                                                      | |
+# | |                                                      | |
+# | +------------------------------------------------------+ |
+# |  SH-NAKE : SNAKE GAME IN PURE BASH!                      |
+# |                                                          |
+# +----------------------------------------------------------+
+
+#    [][][][][][]  [][][][][][]  [][][][][][]  [][][][][][]  
+#    []        []  []        []  []        []  []        []  
+#    []        []  []        []  []        []  []        []  
+#    []        []  []        []  []        []  []        []  
+#    [][][][][][]  [][][][][][]  [][][][][][]  [][][][][][]  
+#    []        []  []        []  []        []  []        []  
+#    []        []  []        []  []        []  []        []  
+#    []        []  []        []  []        []  []        []  
+#    [][][][][][]  [][][][][][]  [][][][][][]  [][][][][][]  
+#
+#
