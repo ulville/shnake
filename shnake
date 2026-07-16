@@ -178,6 +178,9 @@ BMAG=$'\e[45m'
 BCYN=$'\e[46m'
 BWHT=$'\e[47m'
 
+RUN_TIME="$(printf "%(%Y-%m-%d_%H-%M-%S)T" "-1")"
+BENCHMARK_FILE="$SCRIPT_DIR/benchmark_shnake_$RUN_TIME"
+
 timeout_event_triggered () {
     local interval_ms=$1
     local current_time_us=${EPOCHREALTIME/[^0-9]/}
@@ -197,14 +200,16 @@ start_timer () {
 }
 
 measure_timer () {
-    local -n start_time_us=$1
+    local timer_name="$1"
+    local -n start_time_us="$timer_name"
     local current_time_us=${EPOCHREALTIME/[^0-9]/}
     local delta_t_us delta_t_ms
     (( delta_t_us = current_time_us - start_time_us ))
     (( delta_t_ms = (delta_t_us + 500) / 1000 ))
     # start_time_us=$current_time_us
-    move_cursor 1 1
-    printf "\e[2Ktimer: %d ms" $delta_t_ms
+    # move_cursor 1 1
+    # printf "\e[2K%s: %d ms" "$timer_name" $delta_t_ms
+    printf "%s: %d ms\n" "$timer_name" $delta_t_ms >> "$BENCHMARK_FILE"
 }
 
 # printfc [-f forecolor] [-b backcolor] format [arguments]
@@ -357,6 +362,7 @@ center_draw_window () {
         read -r -s -t 5
         center_draw_window
     fi
+    snake_needs_redraw=true
 }
 
 init_window () {
@@ -399,11 +405,15 @@ save_state () {
     local saved_snake=("${snake[@]}")
     local saved_food_x="$food_x"
     local saved_food_y="$food_y"
+    local saved_direction_x="$direction_x"
+    local saved_direction_y="$direction_y"
     { 
         declare -p saved_score;
         declare -p saved_snake;
         declare -p saved_food_x;
         declare -p saved_food_y;
+        declare -p saved_direction_x;
+        declare -p saved_direction_y;
     } > "$SAVE_FILE"
 }
 
@@ -416,10 +426,13 @@ init_game () {
     if [[ -r "$SAVE_FILE" && -s "$SAVE_FILE" ]]; then
         . "$SAVE_FILE"
         score="$saved_score"
+        snake=("${saved_snake[@]}")
         food_x="$saved_food_x"
         food_y="$saved_food_y"
-        snake=("${saved_snake[@]}")
+        direction_x="$saved_direction_x"
+        direction_y="$saved_direction_y"
         running=false
+        food_needs_redraw=true
     else
         score=0
         snake_reset
@@ -482,23 +495,39 @@ generate_random_food () {
         food_x=$((RANDOM % width))
         food_y=$((RANDOM % height))
     done
+    food_needs_redraw=true
 }
 
 draw_food () {
-    local x=$(( window_left + 1 + food_x * cell_width  ))
-    local y=$(( window_top  + 1 + food_y * cell_height ))
-    draw_sprite "${sprites[food]}" $x $y "$BLK" "$BGRN"
+    if "$food_needs_redraw"; then
+        local x=$(( window_left + 1 + food_x * cell_width  ))
+        local y=$(( window_top  + 1 + food_y * cell_height ))
+        draw_sprite "${sprites[food]}" $x $y "$BLK" "$BGRN"
+        food_needs_redraw=false
+    fi
+}
+
+draw_snake_section () {
+    local index="$1"
+    local section="${snake[$index]}"
+    local section_x section_y
+    read -r section_x section_y <<< "$section"
+    local x=$(( window_left + 1 + section_x * cell_width  ))
+    local y=$(( window_top  + 1 + section_y * cell_height ))
+    draw_sprite "${sprites[snake]}" $x $y "$BLK" "$BGRN"
 }
 
 draw_snake () {
-    # TODO Draw the whole body only at the start. Then draw only the head
-    local section section_x section_y
-    for section in "${snake[@]}"; do
-        read -r section_x section_y <<< "$section"
-        local x=$(( window_left + 1 + section_x * cell_width  ))
-        local y=$(( window_top  + 1 + section_y * cell_height ))
-        draw_sprite "${sprites[snake]}" $x $y "$BLK" "$BGRN"
-    done
+    local snake_length="${#snake[@]}"
+    local i
+    if "$snake_needs_redraw"; then
+        for ((i=0; i < snake_length; i++)); do
+            draw_snake_section "$i"
+        done
+        snake_needs_redraw=false
+    else
+        draw_snake_section 0
+    fi
 }
 
 draw_score () {
