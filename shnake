@@ -363,6 +363,7 @@ center_draw_window () {
         center_draw_window
     fi
     snake_needs_redraw=true
+    food_needs_redraw=true
 }
 
 init_window () {
