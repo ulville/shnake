@@ -36,15 +36,15 @@ window_left=0
 window_top=0
 
 # Define sprites and colors
-declare -A ascii_sprites=(
+declare -A bracket_sprites=(
     [snake]="[]" [food]="<>"
 )
 
-declare -A unicode_sprites=(
+declare -A block_sprites=(
     [snake]=$'\u2588\u2588' [food]=$'\u2592\u2592'
 )
 
-declare -n sprites=ascii_sprites
+declare -n sprites=bracket_sprites
 
 IFS=$'\n' read -r -d '' BANNER << EOF
        MM                                     MMM 
@@ -281,14 +281,28 @@ clear_screen_with_backcolor () {
     printfc -b "$1" "\e[2J"
 }
 
-# clear_point_with_background x y bg
+# clear_point_with_backcolor x y bg
 clear_point_with_backcolor () {
     local x=$1
     local y=$2
     local bg=$3
     local i
     for (( i = 0; i < cell_height; i++)); do
-        draw_sprite "$(repeat $cell_width " ")" "$x" "$y" "$BLK" "$bg"
+        draw_sprite "$(repeat $cell_width " ")" "$x" "$((y+i))" "$BLK" "$bg"
+    done
+}
+
+# clear_rectangle_with_backcolor x y w h bg
+clear_rectangle_with_backcolor () {
+    local x=$1
+    local y=$2
+    local w=$3
+    local h=$4
+    local bg=$5
+    local line="$(repeat $w " ")"
+    local i
+    for ((i=0; i < h; i++)); do
+        draw_sprite "$line" "$x" "$((y+i))" "$BLK" "$bg"
     done
 }
 
@@ -382,6 +396,8 @@ init_window () {
     old_lines="$LINES"
     old_columns="$COLUMNS"
     show_banner=true
+    # TODO Add on-screen buttons and mouse support for easier control in
+    # touch screen environments (eg. Termux)
     center_draw_window
 }
 
@@ -541,25 +557,39 @@ ring_bell () {
 }
 
 show_score () {
-    local dig_w=3
-    local dig_h=5
-    local dig_c=4
-    local gap=1
-    local digs_w=$(( dig_w * dig_c + gap * ( dig_c - 1 ) ))
-    local dig_left=$(( (width - digs_w) / 2 ))
-    printf -v score_digits "%04d" "$score"
-    local dig_x dig_y i d
-    for i in {0..3}; do
-        d="${score_digits:$i:1}"
-        ((dig_x = window_left + 1 + (dig_left + (dig_w+gap) * i) * cell_width))
-        ((dig_y = window_top + 2 * cell_height))
-        draw_digit "${DIGIT[$d]}" $dig_x $dig_y "$BLK" "$BGRN"
-    done
+    local dig_w=3 dig_h=5 # as cells
+    local dig_num=4
+    local gap=1 # as cells
+    local pad=1 # as chars
+    local score_w=$(( dig_w * dig_num + gap * ( dig_num - 1 ) )) # as cells
+    local score_x=$(( ( (width - score_w) / 2 ) * cell_width )) # as chars
+    local score_y=$(( 2 * cell_height)) # as chars
+    printf -v score_digits "%0${dig_num}d" "$score"
 
     local text="HIGH SCORE : $high_score"
     local txt_w=${#text}
     local txt_left=$(( window_left + 1 + ( cell_width * width - txt_w ) / 2 ))
-    local txt_top=$(( dig_y + ( dig_h + 1 ) * cell_height ))
+    local txt_top=$(( window_top + 1 + score_y + dig_h * cell_height + 2 * pad ))
+
+    local rect_x rect_y rect_w rect_h
+    ((rect_x = window_left + 1 + score_x - pad))
+    ((rect_y = window_top + 1 + score_y - pad))
+    ((rect_w = score_w * cell_width + 2 * pad))
+    ((rect_h = dig_h * cell_height + 2 * pad))
+    clear_rectangle_with_backcolor "$rect_x" "$rect_y" "$rect_w" "$rect_h" "$BGRN"
+    ((rect_x = txt_left - pad))
+    ((rect_y = txt_top - pad))
+    ((rect_w = txt_w + 2 * pad))
+    ((rect_h = 1 + 2 * pad))
+    clear_rectangle_with_backcolor "$rect_x" "$rect_y" "$rect_w" "$rect_h" "$BGRN"
+
+    local dig_x dig_y i d
+    ((dig_y = window_top + 1 + score_y))
+    for ((i=0; i < dig_num; i++)); do
+        d="${score_digits:$i:1}"
+        ((dig_x = window_left + 1 + score_x + (dig_w+gap) * i * cell_width))
+        draw_digit "${DIGIT[$d]}" $dig_x $dig_y "$BLK" "$BGRN"
+    done
 
     draw_sprite "$text" "$txt_left" "$txt_top" "$BLK" "$BGRN"
 }
