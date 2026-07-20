@@ -386,6 +386,8 @@ center_draw_window () {
     printfc -f "$DFG" -b "$DBG" "\u2514%s\u2518" "$(repeat "$w" $'\u2500')"
     if "$show_banner"; then
         show_banner
+        # TODO say "Starting in x seconds...
+        #          Hit enter key to start now"
         read -r -s -t 5
         center_draw_window
     fi
@@ -625,6 +627,7 @@ game_over () {
     generate_random_food
     running=false
     key_queue=()
+    # TODO save score in the score-board if it's in the top 5
     if [[ $score -gt $high_score ]]; then
         save_high_score
     fi
@@ -632,7 +635,8 @@ game_over () {
     show_score
     ring_bell
     score=0
-    read -r -s # <> <(:)
+    # TODO process q key to exit
+    read -r -s
     center_draw_window
 }
 
@@ -706,6 +710,18 @@ debug_log () {
 }
 
 main () {
+    # TODO process arguments to:
+    # - set speed (step_time)
+    # - set sprite type (brackets or blocks)
+    # - [maybe] custom forground and background colors
+    # - use custom save file
+
+    # TODO add config file parsing to set some behavior:
+    # - custom sprites
+    # - custom colors
+    # - default speed
+    # - custom key bindings
+
     init_window
     init_game
 
