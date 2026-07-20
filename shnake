@@ -36,10 +36,12 @@ window_left=0
 window_top=0
 
 # Define sprites and colors
+# shellcheck disable=SC2034
 declare -A bracket_sprites=(
     [snake]="[]" [food]="<>"
 )
 
+# shellcheck disable=SC2034
 declare -A block_sprites=(
     [snake]=$'\u2588\u2588' [food]=$'\u2592\u2592'
 )
@@ -152,31 +154,41 @@ BANNER="${BANNER//M/$BLOCK}"
 unset digit n
 
 # KEYS:
-KEY_UP=$'\e[A'
-KEY_DOWN=$'\e[B'
-KEY_RIGHT=$'\e[C'
-KEY_LEFT=$'\e[D'
+declare -A KEYS=(
+    [UP]=$'\e[A'
+    [DOWN]=$'\e[B'
+    [RIGHT]=$'\e[C'
+    [LEFT]=$'\e[D'
+)
 
 # COLORS:
-BLK=$'\e[30m'; LBLK=$'\e[90m'
-RED=$'\e[31m'; LRED=$'\e[91m'
-GRN=$'\e[32m'; LGRN=$'\e[92m'
-YEL=$'\e[33m'; LYEL=$'\e[93m'
-BLU=$'\e[34m'; LBLU=$'\e[94m'
-MAG=$'\e[35m'; LMAG=$'\e[95m'
-CYN=$'\e[36m'; LCYN=$'\e[96m'
-WHT=$'\e[37m'; LWHT=$'\e[97m'
-RST=$'\e[0m' ; BOLD=$'\e[1m'
+declare -A CLRS=(
+    # FORGROUND COLORS
+    [BLK]=$'\e[30m' [LBLK]=$'\e[90m'
+    [RED]=$'\e[31m' [LRED]=$'\e[91m'
+    [GRN]=$'\e[32m' [LGRN]=$'\e[92m'
+    [YEL]=$'\e[33m' [LYEL]=$'\e[93m'
+    [BLU]=$'\e[34m' [LBLU]=$'\e[94m'
+    [MAG]=$'\e[35m' [LMAG]=$'\e[95m'
+    [CYN]=$'\e[36m' [LCYN]=$'\e[96m'
+    [WHT]=$'\e[37m' [LWHT]=$'\e[97m'
+    [RST]=$'\e[0m'  [BOLD]=$'\e[1m'
+    # BACKGROUND COLORS:
+    [BBLK]=$'\e[40m'
+    [BRED]=$'\e[41m'
+    [BGRN]=$'\e[42m'
+    [BYEL]=$'\e[43m'
+    [BBLU]=$'\e[44m'
+    [BMAG]=$'\e[45m'
+    [BCYN]=$'\e[46m'
+    [BWHT]=$'\e[47m'
+)
 
-# BACKGROUND COLORS:
-BBLK=$'\e[40m'
-BRED=$'\e[41m'
-BGRN=$'\e[42m'
-BYEL=$'\e[43m'
-BBLU=$'\e[44m'
-BMAG=$'\e[45m'
-BCYN=$'\e[46m'
-BWHT=$'\e[47m'
+# DEFAULT COLORS:
+
+DFG="${CLRS[BLK]}"
+DBG="${CLRS[BGRN]}"
+RST="${CLRS[RST]}"
 
 RUN_TIME="$(printf "%(%Y-%m-%d_%H-%M-%S)T" "-1")"
 BENCHMARK_FILE="$SCRIPT_DIR/benchmark_shnake_$RUN_TIME"
@@ -288,7 +300,7 @@ clear_point_with_backcolor () {
     local bg=$3
     local i
     for (( i = 0; i < cell_height; i++)); do
-        draw_sprite "$(repeat $cell_width " ")" "$x" "$((y+i))" "$BLK" "$bg"
+        draw_sprite "$(repeat $cell_width " ")" "$x" "$((y+i))" "$DFG" "$bg"
     done
 }
 
@@ -299,10 +311,11 @@ clear_rectangle_with_backcolor () {
     local w=$3
     local h=$4
     local bg=$5
-    local line="$(repeat $w " ")"
-    local i
+
+    local line i
+    line="$(repeat "$w" " ")"
     for ((i=0; i < h; i++)); do
-        draw_sprite "$line" "$x" "$((y+i))" "$BLK" "$bg"
+        draw_sprite "$line" "$x" "$((y+i))" "$DFG" "$bg"
     done
 }
 
@@ -312,7 +325,7 @@ clear_disposed_cells () {
         read -r cell_x cell_y <<< "$cell"
         local x=$(( window_left + 1 + cell_x * cell_width  ))
         local y=$(( window_top  + 1 + cell_y * cell_height ))
-        clear_point_with_backcolor $x $y "$BGRN"
+        clear_point_with_backcolor $x $y "$DBG"
     done
     disposed_cells=()
 }
@@ -352,25 +365,25 @@ center_draw_window () {
     (( window_top  = screen_top + 3 ))
     (( window_left = screen_left ))
 
-    clear_screen_with_backcolor "$BBLK"
+    clear_screen_with_backcolor "${CLRS[BBLK]}"
     # Draw score section
     move_cursor $screen_top $screen_left
-    printfc -f "$BLK" -b "$BGRN" " %s " "$(repeat "$w" $'\u2500')" # $'\u2534')"
+    printfc -f "$DFG" -b "$DBG" " %s " "$(repeat "$w" $'\u2500')" # $'\u2534')"
     move_cursor $((screen_top + 1)) $screen_left
-    printfc -f "$BLK" -b "$BGRN" " %04d%s" 0 "$(repeat "$((screen_w - 4 - 1))" ' ')"
+    printfc -f "$DFG" -b "$DBG" " %04d%s" 0 "$(repeat "$((screen_w - 4 - 1))" ' ')"
     move_cursor $((screen_top + 2)) $window_left
-    printfc -f "$BLK" -b "$BGRN" " %s " "$(repeat "$w" $'\u2500')"
+    printfc -f "$DFG" -b "$DBG" " %s " "$(repeat "$w" $'\u2500')"
 
     # Draw window borders
     move_cursor $window_top $window_left
-    printfc -f "$BLK" -b "$BGRN" "\u250c%s\u2510" "$(repeat "$w" $'\u2500')"
+    printfc -f "$DFG" -b "$DBG" "\u250c%s\u2510" "$(repeat "$w" $'\u2500')"
     local i
     for (( i = 0; i < h; i++)); do
         move_cursor $((window_top + i + 1)) $window_left
-        printfc -f "$BLK" -b "$BGRN" "\u2502%s\u2502" "$(repeat "$w" ' ')"
+        printfc -f "$DFG" -b "$DBG" "\u2502%s\u2502" "$(repeat "$w" ' ')"
     done
     move_cursor $((window_top + i + 1)) $window_left
-    printfc -f "$BLK" -b "$BGRN" "\u2514%s\u2518" "$(repeat "$w" $'\u2500')"
+    printfc -f "$DFG" -b "$DBG" "\u2514%s\u2518" "$(repeat "$w" $'\u2500')"
     if "$show_banner"; then
         show_banner
         read -r -s -t 5
@@ -402,13 +415,14 @@ init_window () {
 }
 
 get_high_score () {
-    local date time _score
+    local date time score
     high_score=0
     if ! [[ -r "$SCORE_BOARD_FILE" ]]; then
         return 1
     fi
-    while read -r date time _score; do
-        (( high_score = high_score > _score ? high_score : _score ))
+    # shellcheck disable=SC2034
+    while read -r date time score; do
+        (( high_score = high_score > score ? high_score : score ))
     done < "$SCORE_BOARD_FILE"
 }
 
@@ -441,6 +455,7 @@ init_game () {
     grow=false
 
     if [[ -r "$SAVE_FILE" && -s "$SAVE_FILE" ]]; then
+        # shellcheck source=save
         . "$SAVE_FILE"
         score="$saved_score"
         snake=("${saved_snake[@]}")
@@ -519,7 +534,7 @@ draw_food () {
     if "$food_needs_redraw"; then
         local x=$(( window_left + 1 + food_x * cell_width  ))
         local y=$(( window_top  + 1 + food_y * cell_height ))
-        draw_sprite "${sprites[food]}" $x $y "$BLK" "$BGRN"
+        draw_sprite "${sprites[food]}" $x $y "$DFG" "$DBG"
         food_needs_redraw=false
     fi
 }
@@ -531,7 +546,7 @@ draw_snake_section () {
     read -r section_x section_y <<< "$section"
     local x=$(( window_left + 1 + section_x * cell_width  ))
     local y=$(( window_top  + 1 + section_y * cell_height ))
-    draw_sprite "${sprites[snake]}" $x $y "$BLK" "$BGRN"
+    draw_sprite "${sprites[snake]}" $x $y "$DFG" "$DBG"
 }
 
 draw_snake () {
@@ -549,7 +564,7 @@ draw_snake () {
 
 draw_score () {
     move_cursor $((window_top - 2)) $((window_left + 1))
-    printfc -f "$BLK" -b "$BGRN" "%04d" "$score"
+    printfc -f "$DFG" -b "$DBG" "%04d" "$score"
 }
 
 ring_bell () {
@@ -576,22 +591,22 @@ show_score () {
     ((rect_y = window_top + 1 + score_y - pad))
     ((rect_w = score_w * cell_width + 2 * pad))
     ((rect_h = dig_h * cell_height + 2 * pad))
-    clear_rectangle_with_backcolor "$rect_x" "$rect_y" "$rect_w" "$rect_h" "$BGRN"
+    clear_rectangle_with_backcolor "$rect_x" "$rect_y" "$rect_w" "$rect_h" "$DBG"
     ((rect_x = txt_left - pad))
     ((rect_y = txt_top - pad))
     ((rect_w = txt_w + 2 * pad))
     ((rect_h = 1 + 2 * pad))
-    clear_rectangle_with_backcolor "$rect_x" "$rect_y" "$rect_w" "$rect_h" "$BGRN"
+    clear_rectangle_with_backcolor "$rect_x" "$rect_y" "$rect_w" "$rect_h" "$DBG"
 
     local dig_x dig_y i d
     ((dig_y = window_top + 1 + score_y))
     for ((i=0; i < dig_num; i++)); do
         d="${score_digits:$i:1}"
         ((dig_x = window_left + 1 + score_x + (dig_w+gap) * i * cell_width))
-        draw_digit "${DIGIT[$d]}" $dig_x $dig_y "$BLK" "$BGRN"
+        draw_digit "${DIGIT[$d]}" $dig_x $dig_y "$DFG" "$DBG"
     done
 
-    draw_sprite "$text" "$txt_left" "$txt_top" "$BLK" "$BGRN"
+    draw_sprite "$text" "$txt_left" "$txt_top" "$DFG" "$DBG"
 }
 
 show_banner () {
@@ -599,7 +614,7 @@ show_banner () {
     local ban_h=10
     local left=$(( window_left + 1 + ( cell_width * width - ban_w ) / 2 ))
     local top=$(( window_top + ( cell_height * height - ban_h ) / 2 ))
-    draw_digit "$BANNER" $left $top "$BLK" "$BGRN"
+    draw_digit "$BANNER" $left $top "$DFG" "$DBG"
     show_banner=false
 }
 
@@ -687,7 +702,7 @@ debug_log () {
     local message="$1"
     local row="$2"
     local cl=$'\e[2K'
-    draw_sprite "$cl$message" 1 "$row" "$LWHT" "$BRED"
+    draw_sprite "$cl$message" 1 "$row" "${CLRS[LWHT]}" "${CLRS[BRED]}"
 }
 
 main () {
@@ -745,25 +760,25 @@ main () {
             break
         fi
         if "$allow_move" && [[ "$direction_y" -eq 0  && \
-            ( "$key" == "k" || "$key" == "w" || "$key" == "$KEY_UP" ) ]]; then
+            ( "$key" == "k" || "$key" == "w" || "$key" == "${KEYS[UP]}" ) ]]; then
         direction_x=0
         direction_y=-1
         allow_move=false
         fi
         if "$allow_move" && [[ "$direction_y" -eq 0 && \
-            ( "$key" == "j" || "$key" == "s" || "$key" == "$KEY_DOWN" ) ]]; then
+            ( "$key" == "j" || "$key" == "s" || "$key" == "${KEYS[DOWN]}" ) ]]; then
         direction_x=0
         direction_y=1
         allow_move=false
         fi
         if "$allow_move" && [[ "$direction_x" -eq 0 && \
-            ( "$key" == "l" || "$key" == "d" || "$key" == "$KEY_RIGHT" ) ]]; then
+            ( "$key" == "l" || "$key" == "d" || "$key" == "${KEYS[RIGHT]}" ) ]]; then
         direction_x=1
         direction_y=0
         allow_move=false
         fi
         if "$allow_move" && [[ "$direction_x" -eq 0  && \
-            ( "$key" == "h" || "$key" == "a" || "$key" == "$KEY_LEFT" ) ]]; then
+            ( "$key" == "h" || "$key" == "a" || "$key" == "${KEYS[LEFT]}" ) ]]; then
         direction_x=-1
         direction_y=0
         allow_move=false
