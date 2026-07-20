@@ -195,13 +195,13 @@ timeout_event_triggered () {
 }
 
 start_timer () {
-    local timer_name=$1
+    local timer_name="_shnake_timer_$1"
     declare -g "$timer_name"=${EPOCHREALTIME/[^0-9]/}
 }
 
 measure_timer () {
     local timer_name="$1"
-    local -n start_time_us="$timer_name"
+    local -n start_time_us="_shnake_timer_$timer_name"
     local current_time_us=${EPOCHREALTIME/[^0-9]/}
     local delta_t_us delta_t_ms
     (( delta_t_us = current_time_us - start_time_us ))
