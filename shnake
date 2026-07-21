@@ -258,7 +258,6 @@ cleanup () {
     stty echo
     hide_cursor off
     alternate_screen_buffer off
-    # TODO Save game-state and ask to continue on the next run
 }
 
 alternate_screen_buffer () {
@@ -340,6 +339,25 @@ check_winsize () {
     old_columns="$COLUMNS"
 }
 
+draw_bordered_rectangle () {
+    local x=$1
+    local y=$2
+    local w=$3
+    local h=$4
+
+    local line i
+    move_cursor "$y" "$x"
+    printfc -f "$DFG" -b "$DBG" "\u250c%s\u2510" "$(repeat "$w" $'\u2500')"
+
+    line="$(printf "\u2502%s\u2502" "$(repeat "$w" ' ')")"
+    for ((i=0; i < h; i++)); do
+        draw_sprite "$line" "$x" "$((y+1+i))" "$DFG" "$DBG"
+    done
+
+    move_cursor $((y + i + 1)) "$x"
+    printfc -f "$DFG" -b "$DBG" "\u2514%s\u2518" "$(repeat "$w" $'\u2500')"
+}
+
 center_draw_window () {
     local w=$((cell_width * width))
     local h=$((cell_height * height))
@@ -352,11 +370,17 @@ center_draw_window () {
     (( screen_w = w + 2 ))
     (( screen_h = h + 5 ))
 
+    local mesline1 mesline2 mesline3 mesline4
     while [[ $COLUMNS -lt $screen_w || $LINES -lt $screen_h ]]; do
         (:)
-        debug_log "Terminal size (${COLUMNS}x${LINES}) is smaller than min: ${screen_w}x${screen_h}" 1
-        debug_log "Resize your terminal window or decrese font size then Hit Enter to continue" 2
-        read -r -s
+        mesline1="Terminal size (${COLUMNS}x${LINES}) is"
+        mesline2="smaller than min: ${screen_w}x${screen_h}"
+        mesline3="Resize your terminal window or"
+        mesline4="decrese font size to continue"
+        debug_log "$mesline1" 1
+        debug_log "$mesline2" 2
+        debug_log "$mesline3" 3
+        debug_log "$mesline4" 4
         (:)
     done
 
@@ -375,15 +399,7 @@ center_draw_window () {
     printfc -f "$DFG" -b "$DBG" " %s " "$(repeat "$w" $'\u2500')"
 
     # Draw window borders
-    move_cursor $window_top $window_left
-    printfc -f "$DFG" -b "$DBG" "\u250c%s\u2510" "$(repeat "$w" $'\u2500')"
-    local i
-    for (( i = 0; i < h; i++)); do
-        move_cursor $((window_top + i + 1)) $window_left
-        printfc -f "$DFG" -b "$DBG" "\u2502%s\u2502" "$(repeat "$w" ' ')"
-    done
-    move_cursor $((window_top + i + 1)) $window_left
-    printfc -f "$DFG" -b "$DBG" "\u2514%s\u2518" "$(repeat "$w" $'\u2500')"
+    draw_bordered_rectangle $window_left $window_top $w $h
     if "$show_banner"; then
         show_banner
         # TODO say "Starting in x seconds...
@@ -450,14 +466,36 @@ save_state () {
     } > "$SAVE_FILE"
 }
 
+ask_continue () {
+    local w=10
+    local h=2
+    local win_center_x=$((window_left + 1 + (width * cell_width) / 2))
+    local win_center_y=$((window_top + 1 + (height * cell_height) / 2))
+    local menu_x=$((win_center_x - (w + 2) / 2 ))
+    local menu_y=$((win_center_y - (h + 2) / 2))
+    debug_log "$((height * cell_height))" 1
+    local rect=(
+        "$menu_x"
+        "$menu_y"
+        "$w"
+        "$h"
+    )
+    draw_bordered_rectangle "${rect[@]}"
+    draw_sprite " Continue " $((menu_x + 1)) $((menu_y + 1)) "${CLRS[GRN]}" "${CLRS[BBLK]}"
+    draw_sprite " New Game " $((menu_x + 1)) $((menu_y + 2)) "$DFG" "$DBG"
+    sleep 1
+}
+
 init_game () {
     get_high_score
     declare -a -g disposed_cells
     declare -a -g key_queue
     grow=false
 
+    # TODO ask to continue on the next run
     if [[ -r "$SAVE_FILE" && -s "$SAVE_FILE" ]]; then
         # shellcheck source=save
+        ask_continue
         . "$SAVE_FILE"
         score="$saved_score"
         snake=("${saved_snake[@]}")
