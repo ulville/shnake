@@ -38,12 +38,12 @@ window_top=0
 # Define sprites and colors
 # shellcheck disable=SC2034
 declare -A bracket_sprites=(
-    [snake]="[]" [food]="<>"
+    [snake]="[]" [head]="()" [food]="<>"
 )
 
 # shellcheck disable=SC2034
 declare -A block_sprites=(
-    [snake]=$'\u2588\u2588' [food]=$'\u2592\u2592'
+    [snake]=$'\u2588\u2588' [head]=$'\u2592\u2592' [food]=$'\u2592\u2592'
 )
 
 declare -n sprites=bracket_sprites
@@ -160,6 +160,12 @@ declare -A KEYS=(
     [RIGHT]=$'\e[C'
     [LEFT]=$'\e[D'
 )
+
+UP_KEYS=(    "w" "k" "8" "${KEYS[UP]}" )
+DOWN_KEYS=(  "s" "j" "2" "${KEYS[DOWN]}" )
+RIGHT_KEYS=( "d" "l" "6" "${KEYS[RIGHT]}" )
+LEFT_KEYS=(  "a" "h" "4" "${KEYS[LEFT]}" )
+PAUSE_KEYS=( "p" $'\e' " " )
 
 # COLORS:
 declare -A CLRS=(
@@ -466,14 +472,47 @@ save_state () {
     } > "$SAVE_FILE"
 }
 
+get_key () {
+    local -n __key="$1"
+    local t="$2"
+    local read_char
+    if [[ -z "$t" ]]; then
+        IFS= read -d "" -n 1 -r -s __key
+    else
+        IFS= read -d "" -n 1 -r -s -t "$t" __key
+    fi
+    if [[ "$__key" == $'\e' ]]; then
+        # if an escape sequence get the remaining chars. eg. arrow keys
+        while read -d "" -n 1 -r -s -t 0; do
+            read -d "" -n 1 -r -s read_char
+            __key+="$read_char"
+        done
+    fi
+}
+
+draw_menu_items () {
+    local menu_colors_normal=("$DFG" "$DBG")
+    local menu_colors_focused=("${CLRS[GRN]}" "${CLRS[BBLK]}")
+    local i
+    for ((i=0; i < ${#menu_items[@]}; i++)) do
+        if [[ "$selection" -eq "$i" ]]; then
+            local -n menu_colors="menu_colors_focused"
+        else
+            local -n menu_colors="menu_colors_normal"
+        fi
+        draw_sprite " ${menu_items[i]} " $((menu_x + 1)) $((menu_y + 1 + i)) "${menu_colors[@]}"
+    done
+}
+
 ask_continue () {
+    menu_items=("Continue" "New Game")
+    selection=0
     local w=10
-    local h=2
+    local h=${#menu_items[@]}
     local win_center_x=$((window_left + 1 + (width * cell_width) / 2))
     local win_center_y=$((window_top + 1 + (height * cell_height) / 2))
-    local menu_x=$((win_center_x - (w + 2) / 2 ))
-    local menu_y=$((win_center_y - (h + 2) / 2))
-    debug_log "$((height * cell_height))" 1
+    menu_x=$((win_center_x - (w + 2) / 2 ))
+    menu_y=$((win_center_y - (h + 2) / 2))
     local rect=(
         "$menu_x"
         "$menu_y"
@@ -481,9 +520,26 @@ ask_continue () {
         "$h"
     )
     draw_bordered_rectangle "${rect[@]}"
-    draw_sprite " Continue " $((menu_x + 1)) $((menu_y + 1)) "${CLRS[GRN]}" "${CLRS[BBLK]}"
-    draw_sprite " New Game " $((menu_x + 1)) $((menu_y + 2)) "$DFG" "$DBG"
-    sleep 1
+
+    draw_menu_items
+
+    local menu_key
+    local up_down=("${UP_KEYS[@]}" "${DOWN_KEYS[@]}" $'\t')
+    while true; do
+        get_key menu_key
+        if [[ "$menu_key" == $'\n' ]]; then
+            break
+        fi
+        if item_in_array "$menu_key" up_down; then
+            (( selection = ! selection ))
+        fi
+        if [[ "$menu_key" == "q" ]]; then
+            exit
+        fi
+        draw_menu_items
+    done
+    center_draw_window
+    return "$selection"
 }
 
 init_game () {
@@ -492,10 +548,8 @@ init_game () {
     declare -a -g key_queue
     grow=false
 
-    # TODO ask to continue on the next run
-    if [[ -r "$SAVE_FILE" && -s "$SAVE_FILE" ]]; then
+    if [[ -r "$SAVE_FILE" && -s "$SAVE_FILE" ]] && ask_continue; then
         # shellcheck source=save
-        ask_continue
         . "$SAVE_FILE"
         score="$saved_score"
         snake=("${saved_snake[@]}")
@@ -513,7 +567,6 @@ init_game () {
     fi
 
     allow_move=false
-
 
     last_update_time_us=${EPOCHREALTIME/[^0-9]/}
 }
@@ -586,7 +639,11 @@ draw_snake_section () {
     read -r section_x section_y <<< "$section"
     local x=$(( window_left + 1 + section_x * cell_width  ))
     local y=$(( window_top  + 1 + section_y * cell_height ))
-    draw_sprite "${sprites[snake]}" $x $y "$DFG" "$DBG"
+    local sprite="${sprites[snake]}"
+    if [[ $index -eq 0 ]]; then
+        sprite="${sprites[head]}"
+    fi
+    draw_sprite "$sprite" $x $y "$DFG" "$DBG"
 }
 
 draw_snake () {
@@ -599,6 +656,7 @@ draw_snake () {
         snake_needs_redraw=false
     else
         draw_snake_section 0
+        draw_snake_section 1
     fi
 }
 
@@ -656,6 +714,7 @@ show_banner () {
     local top=$(( window_top + ( cell_height * height - ban_h ) / 2 ))
     draw_digit "$BANNER" $left $top "$DFG" "$DBG"
     show_banner=false
+    draw_sprite "Press Enter to Start" $left $((top + ban_h + 1)) "$DFG" "$DBG"
 }
 
 game_over () {
@@ -673,8 +732,17 @@ game_over () {
     show_score
     ring_bell
     score=0
-    # TODO process q key to exit
-    read -r -s
+
+    local go_key
+    while true; do
+        get_key go_key
+        if [[ "$go_key" == $'\n' ]]; then
+            break
+        fi
+        if [[ "$go_key" == "q" ]]; then
+            exit
+        fi
+    done
     center_draw_window
 }
 
@@ -777,14 +845,7 @@ main () {
             draw_score
         fi
         # Event Handling
-        read -n 1 -r -s -t "0.033" key
-
-        if [[ "$key" == $'\e' ]]; then
-            while read -n 1 -r -s -t 0; do
-                read -n 1 -r -s read_char
-                key+="$read_char"
-            done
-        fi
+        get_key key "0.02"
 
         if ! "$allow_move" && [[ -n "$key" && "${#key_queue[@]}" -lt 2 ]]; then
             key_queue+=("$key")
@@ -801,38 +862,40 @@ main () {
             continue
         fi
 
-        running=true
 
-        if [[ "$key" == "p" ]]; then
+        if item_in_array "$key" PAUSE_KEYS && "$running"; then
             running=false
             key_queue=()
+        else
+            running=true
         fi
+
         if [[ "$key" == "q" ]]; then
             if [[ "$score" -gt 0 ]]; then
                 save_state
             fi
             break
         fi
-        if "$allow_move" && [[ "$direction_y" -eq 0  && \
-            ( "$key" == "k" || "$key" == "w" || "$key" == "${KEYS[UP]}" ) ]]; then
+        if "$allow_move" && [[ "$direction_y" -eq 0 ]] && \
+            item_in_array "$key" UP_KEYS; then
         direction_x=0
         direction_y=-1
         allow_move=false
         fi
-        if "$allow_move" && [[ "$direction_y" -eq 0 && \
-            ( "$key" == "j" || "$key" == "s" || "$key" == "${KEYS[DOWN]}" ) ]]; then
+        if "$allow_move" && [[ "$direction_y" -eq 0 ]] && \
+            item_in_array "$key" DOWN_KEYS; then
         direction_x=0
         direction_y=1
         allow_move=false
         fi
-        if "$allow_move" && [[ "$direction_x" -eq 0 && \
-            ( "$key" == "l" || "$key" == "d" || "$key" == "${KEYS[RIGHT]}" ) ]]; then
+        if "$allow_move" && [[ "$direction_x" -eq 0 ]] && \
+            item_in_array "$key" RIGHT_KEYS; then
         direction_x=1
         direction_y=0
         allow_move=false
         fi
-        if "$allow_move" && [[ "$direction_x" -eq 0  && \
-            ( "$key" == "h" || "$key" == "a" || "$key" == "${KEYS[LEFT]}" ) ]]; then
+        if "$allow_move" && [[ "$direction_x" -eq 0 ]] && \
+            item_in_array "$key" LEFT_KEYS; then
         direction_x=-1
         direction_y=0
         allow_move=false
