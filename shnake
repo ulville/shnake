@@ -602,10 +602,11 @@ draw_digit () {
 
 # item_in_array item array
 item_in_array () {
-    local needle="$1"
-    local -n haystack="$2"
-    for item in "${haystack[@]}"; do
-        if [[ "$item" == "$needle" ]]; then
+    local _iia_needle="$1"
+    local -n _iia_haystack="$2"
+    local _iia_item
+    for _iia_item in "${_iia_haystack[@]}"; do
+        if [[ "$_iia_item" == "$_iia_needle" ]]; then
             return 0
         fi
     done
