@@ -846,7 +846,7 @@ main () {
             draw_score
         fi
         # Event Handling
-        get_key key "0.02"
+        get_key key "0.01"
 
         if ! "$allow_move" && [[ -n "$key" && "${#key_queue[@]}" -lt 2 ]]; then
             key_queue+=("$key")
