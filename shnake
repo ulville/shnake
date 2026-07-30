@@ -408,9 +408,7 @@ center_draw_window () {
     draw_bordered_rectangle $window_left $window_top $w $h
     if "$show_banner"; then
         show_banner
-        # TODO say "Starting in x seconds...
-        #          Hit enter key to start now"
-        read -r -s -t 5
+        read -r -s
         center_draw_window
     fi
     snake_needs_redraw=true
