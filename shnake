@@ -436,21 +436,47 @@ init_window () {
     center_draw_window
 }
 
+sort_array () {
+    local -n _sa_arr="$1"
+    local _sa_len="${#_sa_arr[@]}"
+    local _sa_tmp_arr=()
+    local _sa_i _sa_j
+    for _sa_i in "${_sa_arr[@]}"; do
+        ((_sa_tmp_arr[$_sa_i]++))
+    done
+    _sa_arr=()
+    for _sa_i in "${!_sa_tmp_arr[@]}"; do
+        for ((_sa_j=0; _sa_j < _sa_tmp_arr[_sa_i]; _sa_j++)); do
+            _sa_arr+=( "$_sa_i" )
+        done
+    done
+}
+
 get_high_score () {
     local date time score
     high_score=0
-    if ! [[ -r "$SCORE_BOARD_FILE" ]]; then
+    if ! [[ -r "$SCORE_BOARD_FILE" && -s "$SCORE_BOARD_FILE" ]]; then
         return 1
     fi
+    declare -g -a high_five=()
     # shellcheck disable=SC2034
     while read -r date time score; do
-        (( high_score = high_score > score ? high_score : score ))
+        if [[ -z "$score" || ! "$score" =~ ^[0-9]+$ || "$score" -le 0 ]]; then
+            continue
+        fi
+        high_five+=( "$score" )
     done < "$SCORE_BOARD_FILE"
+    sort_array high_five
+    if [[ "${#high_five[@]}" -gt 5 ]]; then
+        high_five=( "${high_five[@]: -5}" )
+    fi
+    if [[ "${#high_five[@]}" -gt 0 ]]; then
+        high_score="${high_five[-1]}"
+    fi
 }
 
 save_high_score () {
     printf "%(%Y-%m-%d %H:%M:%S)T %d\n" "-1" "$score" >> "$SCORE_BOARD_FILE"
-    high_score=$score
 }
 
 save_state () {
@@ -541,9 +567,10 @@ ask_continue () {
 }
 
 init_game () {
-    get_high_score
     declare -a -g disposed_cells
     declare -a -g key_queue
+    declare -a -g high_five
+    get_high_score
     grow=false
 
     if [[ -r "$SAVE_FILE" && -s "$SAVE_FILE" ]] && ask_continue; then
@@ -723,10 +750,10 @@ game_over () {
     generate_random_food
     running=false
     key_queue=()
-    # TODO save score in the score-board if it's in the top 5
-    if [[ $score -gt $high_score ]]; then
+    if [[ $score -gt "${high_five[@]: -5:1}" ]]; then
         save_high_score
     fi
+    get_high_score
 
     show_score
     ring_bell
