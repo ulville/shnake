@@ -162,7 +162,7 @@ declare -A KEYS=(
 )
 
 UP_KEYS=(    "w" "k" "8" "${KEYS[UP]}" )
-DOWN_KEYS=(  "s" "j" "2" "${KEYS[DOWN]}" )
+DOWN_KEYS=(  "s" "j" "5" "${KEYS[DOWN]}" )
 RIGHT_KEYS=( "d" "l" "6" "${KEYS[RIGHT]}" )
 LEFT_KEYS=(  "a" "h" "4" "${KEYS[LEFT]}" )
 PAUSE_KEYS=( "p" $'\e' " " )
