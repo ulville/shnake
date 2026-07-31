@@ -848,6 +848,16 @@ main () {
     # - [maybe] custom forground and background colors
     # - use custom save file
 
+    local OPTIND OPTARG opt
+    while getopts "i:" opt; do
+        case $opt in
+            i) step_time=$OPTARG
+                ;;
+            \?) return 1 ;;
+        esac
+    done
+    shift $(( OPTIND - 1 ))
+
     # TODO add config file parsing to set some behavior:
     # - custom sprites
     # - custom colors
